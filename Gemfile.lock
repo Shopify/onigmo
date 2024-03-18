@@ -1,17 +1,22 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    power_assert (2.0.3)
     rake (13.0.6)
     rake-compiler (1.2.5)
       rake
+    test-unit (3.6.2)
+      power_assert
 
 PLATFORMS
   arm64-darwin-22
+  arm64-darwin-23
 
 DEPENDENCIES
   bundler
   rake
   rake-compiler
+  test-unit
 
 BUNDLED WITH
    2.4.13
