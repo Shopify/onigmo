@@ -121,7 +121,7 @@ Rake::Task[:compile].prerequisites.prepend(
   *onigmo_sources.map { |filepath| "ext/onigmo/#{filepath.tr("/", "_")}" }
 )
 
-Rake::TestTask.new(:test) do |t|
+Rake::TestTask.new(test: :compile) do |t|
   t.libs << "test"
   t.pattern = "test/**/*_test.rb"
   t.verbose = true
