@@ -6,7 +6,7 @@
 static VALUE
 read_memnum(const unsigned char **cursor) {
     MemNumType memnum = *((MemNumType *) *cursor);
-    cursor += SIZE_MEMNUM;
+    *cursor += SIZE_MEMNUM;
     return INT2NUM(memnum);
 }
 
