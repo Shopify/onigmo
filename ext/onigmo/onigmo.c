@@ -2,6 +2,260 @@
 
 #include "onigmo.h"
 #include "regint.h"
+#include "regparse.h"
+
+VALUE rb_cOnigmoAlternationNode;
+VALUE rb_cOnigmoAnchorNode;
+VALUE rb_cOnigmoAnyNode;
+VALUE rb_cOnigmoBackrefNode;
+VALUE rb_cOnigmoCallNode;
+VALUE rb_cOnigmoCClassNode;
+VALUE rb_cOnigmoCTypeNode;
+VALUE rb_cOnigmoEncloseNode;
+VALUE rb_cOnigmoListNode;
+VALUE rb_cOnigmoQuantifierNode;
+VALUE rb_cOnigmoStringNode;
+
+static VALUE
+build_node(Node *node) {
+    int type = NTYPE(node);
+
+    switch (type) {
+        case NT_STR: {
+            VALUE value = rb_str_new((const char *) NSTR(node)->s, NSTR(node)->end - NSTR(node)->s);
+            VALUE argv[] = { value };
+            return rb_class_new_instance(1, argv, rb_cOnigmoStringNode);
+        }
+        case NT_CCLASS: {
+            VALUE inverted = IS_NCCLASS_NOT(NCCLASS(node)) ? Qtrue : Qfalse;
+            VALUE ranges = rb_ary_new();
+
+            if (NCCLASS(node)->mbuf) {
+                BBuf *bbuf = NCCLASS(node)->mbuf;
+                OnigCodePoint *data = (OnigCodePoint *) bbuf->p;
+                OnigCodePoint *end = (OnigCodePoint *) (bbuf->p + bbuf->used);
+
+                for (++data; data < end; data += 2) {
+                    VALUE range = rb_ary_new();
+                    rb_ary_push(range, INT2NUM(data[0]));
+                    rb_ary_push(range, INT2NUM(data[1]));
+                    rb_ary_push(ranges, range);
+                }
+            }
+
+            VALUE argv[] = { inverted, ranges };
+            return rb_class_new_instance(2, argv, rb_cOnigmoCClassNode);
+        }
+        case NT_CTYPE: {
+            VALUE type = Qnil;
+
+            switch (NCTYPE(node)->ctype) {
+                case ONIGENC_CTYPE_WORD:
+                    if (NCTYPE(node)->not != 0) {
+                        type = ID2SYM(rb_intern("not_word"));
+                    } else {
+                        type = ID2SYM(rb_intern("word"));
+                    }
+                    break;
+                default:
+                    RUBY_ASSERT("unknown ctype");
+                    break;
+            }
+
+            VALUE argv[] = { type };
+            return rb_class_new_instance(1, argv, rb_cOnigmoCTypeNode);
+        }
+        case NT_CANY: {
+            return rb_class_new_instance(0, NULL, rb_cOnigmoAnyNode);
+        }
+        case NT_BREF: {
+            BRefNode *backref_node = NBREF(node);   
+            int *backrefs = BACKREFS_P(backref_node);
+
+            VALUE values = rb_ary_new();
+            for (int index = 0; index < backref_node->back_num; index++) {
+                rb_ary_push(values, INT2NUM(backrefs[index]));
+            }
+
+            VALUE argv[] = { values };
+            return rb_class_new_instance(1, argv, rb_cOnigmoBackrefNode);
+        }
+        case NT_QTFR: {
+            int lower = NQTFR(node)->lower;
+            int upper = NQTFR(node)->upper;
+
+            VALUE argv[] = {
+                lower == -1 ? Qnil : INT2NUM(lower),
+                upper = -1 ? Qnil : INT2NUM(upper),
+                (NQTFR(node)->greedy ? Qtrue : Qfalse),
+                build_node(NQTFR(node)->target)
+            };
+
+            return rb_class_new_instance(4, argv, rb_cOnigmoQuantifierNode);
+        }
+        case NT_ENCLOSE: {
+            VALUE type = Qnil;
+
+            switch (NENCLOSE(node)->type) {
+                case ENCLOSE_OPTION: {
+                    type = rb_ary_new_capa(2);
+                    rb_ary_push(type, ID2SYM(rb_intern("option")));
+                    rb_ary_push(type, INT2NUM(NENCLOSE(node)->option));
+                    break;
+                }
+                case ENCLOSE_MEMORY: {
+                    type = rb_ary_new_capa(2);
+                    rb_ary_push(type, ID2SYM(rb_intern("memory")));
+                    rb_ary_push(type, INT2NUM(NENCLOSE(node)->regnum));
+                    break;
+                }
+                case ENCLOSE_STOP_BACKTRACK: {
+                    type = rb_ary_new_capa(1);
+                    rb_ary_push(type, ID2SYM(rb_intern("stop_backtrack")));
+                    break;
+                }
+                case ENCLOSE_CONDITION: {
+                    type = rb_ary_new_capa(2);
+                    rb_ary_push(type, ID2SYM(rb_intern("condition")));
+                    rb_ary_push(type, INT2NUM(NENCLOSE(node)->regnum));
+                    break;
+                }
+                case ENCLOSE_ABSENT: {
+                    type = rb_ary_new_capa(1);
+                    rb_ary_push(type, ID2SYM(rb_intern("absent")));
+                    break;
+                }
+                default:
+                    RUBY_ASSERT("unknown enclose type");
+                    break;
+            }
+
+            VALUE argv[] = { type, build_node(NENCLOSE(node)->target) };
+            return rb_class_new_instance(2, argv, rb_cOnigmoEncloseNode);
+        }
+        case NT_ANCHOR: {
+            VALUE type = Qnil;
+
+            switch (NANCHOR(node)->type) {
+                case ANCHOR_BEGIN_BUF: type = ID2SYM(rb_intern("begin_buf")); break;
+                case ANCHOR_END_BUF: type = ID2SYM(rb_intern("end_buf")); break;
+                case ANCHOR_BEGIN_LINE: type = ID2SYM(rb_intern("begin_line")); break;
+                case ANCHOR_END_LINE: type = ID2SYM(rb_intern("end_line")); break;
+                case ANCHOR_SEMI_END_BUF: type = ID2SYM(rb_intern("semi_end_buf")); break;
+                case ANCHOR_BEGIN_POSITION: type = ID2SYM(rb_intern("begin_position")); break;
+                case ANCHOR_WORD_BOUND: type = ID2SYM(rb_intern("word_bound")); break;
+                case ANCHOR_NOT_WORD_BOUND: type = ID2SYM(rb_intern("not_word_bound")); break;
+                case ANCHOR_WORD_BEGIN: type = ID2SYM(rb_intern("word_begin")); break;
+                case ANCHOR_WORD_END: type = ID2SYM(rb_intern("word_end")); break;
+                case ANCHOR_PREC_READ: type = ID2SYM(rb_intern("prec_read")); break;
+                case ANCHOR_PREC_READ_NOT: type = ID2SYM(rb_intern("prec_read_not")); break;
+                case ANCHOR_LOOK_BEHIND: type = ID2SYM(rb_intern("look_behind")); break;
+                case ANCHOR_LOOK_BEHIND_NOT: type = ID2SYM(rb_intern("look_behind_not")); break;
+                case ANCHOR_KEEP: type = ID2SYM(rb_intern("keep")); break;
+                default: RUBY_ASSERT("unknown anchor type"); break;
+            }
+
+            VALUE argv[] = { type };
+            return rb_class_new_instance(1, argv, rb_cOnigmoAnchorNode);
+        }
+        case NT_LIST: {
+            VALUE nodes = rb_ary_new();
+            rb_ary_push(nodes, build_node(NCAR(node)));
+
+            while (IS_NOT_NULL(node = NCDR(node))) {
+                RUBY_ASSERT(NTYPE(node) == type);
+                rb_ary_push(nodes, build_node(NCAR(node)));
+            }
+
+            VALUE argv[] = { nodes };
+            return rb_class_new_instance(1, argv, rb_cOnigmoListNode);
+        }
+        case NT_ALT: {
+            VALUE nodes = rb_ary_new();
+            rb_ary_push(nodes, build_node(NCAR(node)));
+
+            while (IS_NOT_NULL(node = NCDR(node))) {
+                RUBY_ASSERT(NTYPE(node) == type);
+                rb_ary_push(nodes, build_node(NCAR(node)));
+            }
+
+            VALUE argv[] = { nodes };
+            return rb_class_new_instance(1, argv, rb_cOnigmoAlternationNode);
+        }
+        case NT_CALL: {
+            CallNode *call_node = NCALL(node);
+            VALUE name = rb_str_new((const char *) call_node->name, call_node->name_end - call_node->name);
+
+            VALUE argv[] = { name };
+            return rb_class_new_instance(1, argv, rb_cOnigmoCallNode);
+        }
+        default: {
+            RUBY_ASSERT("unknown node type");
+            return Qnil;
+        }
+    }
+}
+
+static VALUE
+parse(VALUE self, VALUE string) {
+    const OnigUChar *pattern = (const OnigUChar *) StringValueCStr(string); 
+    const OnigUChar *pattern_end = pattern + strlen((const char *) pattern);
+
+    regex_t *regex = calloc(1, sizeof(regex_t));
+    int result;
+
+    OnigEncoding encoding = ONIG_ENCODING_ASCII;
+    OnigErrorInfo einfo = { 0 };
+
+    if ((result = onig_reg_init(regex, ONIG_OPTION_DEFAULT, ONIGENC_CASE_FOLD_DEFAULT, encoding, ONIG_SYNTAX_DEFAULT)) != 0) {
+        OnigUChar message[ONIG_MAX_ERROR_MESSAGE_LEN];
+        onig_error_code_to_str(message, result, &einfo);
+
+        onig_free(regex);
+        onig_end();
+
+        rb_raise(rb_eArgError, "%s", message);
+        return Qnil;
+    }
+
+    OnigDistance init_size = (pattern_end - pattern) * 2;
+    result = BBUF_INIT(regex, init_size);
+
+    if (result != 0) {
+        OnigUChar message[ONIG_MAX_ERROR_MESSAGE_LEN];
+        onig_error_code_to_str(message, result, &einfo);
+
+        onig_free(regex);
+        onig_end();
+
+        rb_raise(rb_eArgError, "%s", message);
+        return Qnil;
+    }
+
+    Node *root;
+    ScanEnv scan_env = { 0 };
+
+    result = onig_parse_make_tree(&root, pattern, pattern_end, regex, &scan_env);
+    if (result != 0) {
+        OnigUChar message[ONIG_MAX_ERROR_MESSAGE_LEN];
+        onig_error_code_to_str(message, result, &einfo);
+
+        onig_node_free(root);
+        onig_free(regex);
+        onig_end();
+
+        rb_raise(rb_eArgError, "%s", message);
+        return Qnil;
+    }
+
+    VALUE node = build_node(root);
+
+    onig_node_free(root);
+    onig_free(regex);
+    onig_end();
+
+    return node;
+}
 
 static VALUE
 read_memnum(const unsigned char **cursor) {
@@ -680,5 +934,18 @@ compile(VALUE self, VALUE string) {
 void
 Init_onigmo(void) {
     VALUE rb_cOnigmo = rb_define_module("Onigmo");
+    rb_define_singleton_method(rb_cOnigmo, "parse", parse, 1);
     rb_define_singleton_method(rb_cOnigmo, "compile", compile, 1);
+
+    rb_cOnigmoAlternationNode = rb_define_class_under(rb_cOnigmo, "AlternationNode", rb_cObject);
+    rb_cOnigmoAnchorNode = rb_define_class_under(rb_cOnigmo, "AnchorNode", rb_cObject);
+    rb_cOnigmoAnyNode = rb_define_class_under(rb_cOnigmo, "AnyNode", rb_cObject);
+    rb_cOnigmoBackrefNode = rb_define_class_under(rb_cOnigmo, "BackrefNode", rb_cObject);
+    rb_cOnigmoCallNode = rb_define_class_under(rb_cOnigmo, "CallNode", rb_cObject);
+    rb_cOnigmoCClassNode = rb_define_class_under(rb_cOnigmo, "CClassNode", rb_cObject);
+    rb_cOnigmoCTypeNode = rb_define_class_under(rb_cOnigmo, "CTypeNode", rb_cObject);
+    rb_cOnigmoEncloseNode = rb_define_class_under(rb_cOnigmo, "EncloseNode", rb_cObject);
+    rb_cOnigmoListNode = rb_define_class_under(rb_cOnigmo, "ListNode", rb_cObject);
+    rb_cOnigmoQuantifierNode = rb_define_class_under(rb_cOnigmo, "QuantifierNode", rb_cObject);
+    rb_cOnigmoStringNode = rb_define_class_under(rb_cOnigmo, "StringNode", rb_cObject);
 }
