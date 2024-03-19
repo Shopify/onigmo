@@ -1,6 +1,6 @@
 #include <ruby.h>
+#include <ruby/onigmo.h>
 
-#include "onigmo.h"
 #include "regint.h"
 #include "regparse.h"
 
