@@ -3,8 +3,7 @@
 source "https://rubygems.org"
 
 gem "bundler"
-gem "rake"
 gem "rake-compiler"
-gem "test-unit"
-
+gem "rake"
 gem "simplecov"
+gem "test-unit"

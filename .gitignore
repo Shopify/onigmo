@@ -1,3 +1,10 @@
-coverage/
-lib/onigmo/onigmo.bundle
-tmp/
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+
+/lib/onigmo/onigmo.bundle

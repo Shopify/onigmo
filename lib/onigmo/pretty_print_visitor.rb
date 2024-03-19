@@ -249,7 +249,8 @@ module Onigmo
         q.text("quantifier(")
         q.nest(2) do
           q.breakable("")
-          q.seplist([node.lower, node.upper, node.greedy]) do |value|
+          q.seplist({ lower: node.lower, upper: node.upper, greedy: node.greedy }) do |key, value|
+            q.text("#{key}: ")
             q.pp(value)
           end
           q.comma_breakable

@@ -2,9 +2,7 @@
 # frozen_string_literal: true
 
 require "bundler/setup"
-
-$:.unshift(File.expand_path("../lib", __dir__))
 require "onigmo"
 
 require "irb"
-IRB.start
+IRB.start(__FILE__)
