@@ -1,2 +1,3 @@
-tmp
+coverage/
 lib/onigmo/onigmo.bundle
+tmp/

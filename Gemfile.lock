@@ -1,10 +1,17 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    docile (1.4.0)
     power_assert (2.0.3)
     rake (13.0.6)
     rake-compiler (1.2.5)
       rake
+    simplecov (0.22.0)
+      docile (~> 1.1)
+      simplecov-html (~> 0.11)
+      simplecov_json_formatter (~> 0.1)
+    simplecov-html (0.12.3)
+    simplecov_json_formatter (0.1.4)
     test-unit (3.6.2)
       power_assert
 
@@ -16,6 +23,7 @@ DEPENDENCIES
   bundler
   rake
   rake-compiler
+  simplecov
   test-unit
 
 BUNDLED WITH

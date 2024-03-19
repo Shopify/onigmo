@@ -4,21 +4,36 @@
 #include "regint.h"
 #include "regparse.h"
 
+VALUE rb_cOnigmoNode;
 VALUE rb_cOnigmoAlternationNode;
-VALUE rb_cOnigmoAnchorNode;
+VALUE rb_cOnigmoAnchorBufferBeginNode;
+VALUE rb_cOnigmoAnchorBufferEndNode;
+VALUE rb_cOnigmoAnchorKeepNode;
+VALUE rb_cOnigmoAnchorLineBeginNode;
+VALUE rb_cOnigmoAnchorLineEndNode;
+VALUE rb_cOnigmoAnchorPositionBeginNode;
+VALUE rb_cOnigmoAnchorSemiEndNode;
+VALUE rb_cOnigmoAnchorWordBoundaryNode;
+VALUE rb_cOnigmoAnchorWordBoundaryInvertNode;
 VALUE rb_cOnigmoAnyNode;
 VALUE rb_cOnigmoBackrefNode;
 VALUE rb_cOnigmoCallNode;
 VALUE rb_cOnigmoCClassNode;
-VALUE rb_cOnigmoCTypeNode;
+VALUE rb_cOnigmoCClassInvertNode;
 VALUE rb_cOnigmoEncloseAbsentNode;
 VALUE rb_cOnigmoEncloseConditionNode;
 VALUE rb_cOnigmoEncloseMemoryNode;
 VALUE rb_cOnigmoEncloseOptionsNode;
 VALUE rb_cOnigmoEncloseStopBacktrackNode;
 VALUE rb_cOnigmoListNode;
+VALUE rb_cOnigmoLookAheadNode;
+VALUE rb_cOnigmoLookAheadInvertNode;
+VALUE rb_cOnigmoLookBehindNode;
+VALUE rb_cOnigmoLookBehindInvertNode;
 VALUE rb_cOnigmoQuantifierNode;
 VALUE rb_cOnigmoStringNode;
+VALUE rb_cOnigmoWordNode;
+VALUE rb_cOnigmoWordInvertNode;
 
 static VALUE
 build_options(OnigOptionType option) {
@@ -58,7 +73,6 @@ build_node(Node *node) {
             return rb_class_new_instance(1, argv, rb_cOnigmoStringNode);
         }
         case NT_CCLASS: {
-            VALUE inverted = IS_NCCLASS_NOT(NCCLASS(node)) ? Qtrue : Qfalse;
             VALUE ranges = rb_ary_new();
 
             if (NCCLASS(node)->mbuf) {
@@ -74,27 +88,24 @@ build_node(Node *node) {
                 }
             }
 
-            VALUE argv[] = { inverted, ranges };
-            return rb_class_new_instance(2, argv, rb_cOnigmoCClassNode);
+            VALUE argv[] = { ranges };
+            if (IS_NCCLASS_NOT(NCCLASS(node))) {
+                return rb_class_new_instance(1, argv, rb_cOnigmoCClassInvertNode);
+            } else {
+                return rb_class_new_instance(1, argv, rb_cOnigmoCClassNode);
+            }
         }
         case NT_CTYPE: {
-            VALUE type = Qnil;
-
-            switch (NCTYPE(node)->ctype) {
-                case ONIGENC_CTYPE_WORD:
-                    if (NCTYPE(node)->not != 0) {
-                        type = ID2SYM(rb_intern("not_word"));
-                    } else {
-                        type = ID2SYM(rb_intern("word"));
-                    }
-                    break;
-                default:
-                    RUBY_ASSERT("unknown ctype");
-                    break;
+            if (NCTYPE(node)->ctype == ONIGENC_CTYPE_WORD) {
+                if (NCTYPE(node)->not == 0) {
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoWordNode);
+                } else {
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoWordInvertNode);
+                }
+            } else {
+                RUBY_ASSERT("unknown ctype");
+                return Qnil;
             }
-
-            VALUE argv[] = { type };
-            return rb_class_new_instance(1, argv, rb_cOnigmoCTypeNode);
         }
         case NT_CANY: {
             return rb_class_new_instance(0, NULL, rb_cOnigmoAnyNode);
@@ -154,29 +165,49 @@ build_node(Node *node) {
             }
         }
         case NT_ANCHOR: {
-            VALUE type = Qnil;
-
             switch (NANCHOR(node)->type) {
-                case ANCHOR_BEGIN_BUF: type = ID2SYM(rb_intern("begin_buf")); break;
-                case ANCHOR_END_BUF: type = ID2SYM(rb_intern("end_buf")); break;
-                case ANCHOR_BEGIN_LINE: type = ID2SYM(rb_intern("begin_line")); break;
-                case ANCHOR_END_LINE: type = ID2SYM(rb_intern("end_line")); break;
-                case ANCHOR_SEMI_END_BUF: type = ID2SYM(rb_intern("semi_end_buf")); break;
-                case ANCHOR_BEGIN_POSITION: type = ID2SYM(rb_intern("begin_position")); break;
-                case ANCHOR_WORD_BOUND: type = ID2SYM(rb_intern("word_bound")); break;
-                case ANCHOR_NOT_WORD_BOUND: type = ID2SYM(rb_intern("not_word_bound")); break;
-                case ANCHOR_WORD_BEGIN: type = ID2SYM(rb_intern("word_begin")); break;
-                case ANCHOR_WORD_END: type = ID2SYM(rb_intern("word_end")); break;
-                case ANCHOR_PREC_READ: type = ID2SYM(rb_intern("prec_read")); break;
-                case ANCHOR_PREC_READ_NOT: type = ID2SYM(rb_intern("prec_read_not")); break;
-                case ANCHOR_LOOK_BEHIND: type = ID2SYM(rb_intern("look_behind")); break;
-                case ANCHOR_LOOK_BEHIND_NOT: type = ID2SYM(rb_intern("look_behind_not")); break;
-                case ANCHOR_KEEP: type = ID2SYM(rb_intern("keep")); break;
-                default: RUBY_ASSERT("unknown anchor type"); break;
+                case ANCHOR_BEGIN_BUF:
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorBufferBeginNode);
+                case ANCHOR_END_BUF:
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorBufferEndNode);
+                case ANCHOR_BEGIN_LINE:
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorLineBeginNode);
+                case ANCHOR_END_LINE:
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorLineEndNode);
+                case ANCHOR_SEMI_END_BUF:
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorSemiEndNode);
+                case ANCHOR_BEGIN_POSITION:
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorPositionBeginNode);
+                case ANCHOR_WORD_BOUND:
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorWordBoundaryNode);
+                case ANCHOR_NOT_WORD_BOUND:
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorWordBoundaryInvertNode);
+                case ANCHOR_PREC_READ: {
+                    VALUE target = build_node(NANCHOR(node)->target);
+                    VALUE argv[] = { target };
+                    return rb_class_new_instance(1, argv, rb_cOnigmoLookAheadNode);
+                }
+                case ANCHOR_PREC_READ_NOT: {
+                    VALUE target = build_node(NANCHOR(node)->target);
+                    VALUE argv[] = { target };
+                    return rb_class_new_instance(1, argv, rb_cOnigmoLookAheadInvertNode);
+                }
+                case ANCHOR_LOOK_BEHIND: {
+                    VALUE target = build_node(NANCHOR(node)->target);
+                    VALUE argv[] = { target };
+                    return rb_class_new_instance(1, argv, rb_cOnigmoLookBehindNode);
+                }
+                case ANCHOR_LOOK_BEHIND_NOT: {
+                    VALUE target = build_node(NANCHOR(node)->target);
+                    VALUE argv[] = { target };
+                    return rb_class_new_instance(1, argv, rb_cOnigmoLookBehindInvertNode);
+                }
+                case ANCHOR_KEEP:
+                    return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorKeepNode);
+                default:
+                    RUBY_ASSERT("unknown anchor type");
+                    return Qnil;
             }
-
-            VALUE argv[] = { type };
-            return rb_class_new_instance(1, argv, rb_cOnigmoAnchorNode);
         }
         case NT_LIST: {
             VALUE nodes = rb_ary_new();
@@ -913,19 +944,34 @@ Init_onigmo(void) {
     rb_define_singleton_method(rb_cOnigmo, "parse", parse, 1);
     rb_define_singleton_method(rb_cOnigmo, "compile", compile, 1);
 
-    rb_cOnigmoAlternationNode = rb_define_class_under(rb_cOnigmo, "AlternationNode", rb_cObject);
-    rb_cOnigmoAnchorNode = rb_define_class_under(rb_cOnigmo, "AnchorNode", rb_cObject);
-    rb_cOnigmoAnyNode = rb_define_class_under(rb_cOnigmo, "AnyNode", rb_cObject);
-    rb_cOnigmoBackrefNode = rb_define_class_under(rb_cOnigmo, "BackrefNode", rb_cObject);
-    rb_cOnigmoCallNode = rb_define_class_under(rb_cOnigmo, "CallNode", rb_cObject);
-    rb_cOnigmoCClassNode = rb_define_class_under(rb_cOnigmo, "CClassNode", rb_cObject);
-    rb_cOnigmoCTypeNode = rb_define_class_under(rb_cOnigmo, "CTypeNode", rb_cObject);
-    rb_cOnigmoEncloseAbsentNode = rb_define_class_under(rb_cOnigmo, "EncloseAbsentNode", rb_cObject);
-    rb_cOnigmoEncloseConditionNode = rb_define_class_under(rb_cOnigmo, "EncloseConditionNode", rb_cObject);
-    rb_cOnigmoEncloseMemoryNode = rb_define_class_under(rb_cOnigmo, "EncloseMemoryNode", rb_cObject);
-    rb_cOnigmoEncloseOptionsNode = rb_define_class_under(rb_cOnigmo, "EncloseOptionsNode", rb_cObject);
-    rb_cOnigmoEncloseStopBacktrackNode = rb_define_class_under(rb_cOnigmo, "EncloseStopBacktrackNode", rb_cObject);
-    rb_cOnigmoListNode = rb_define_class_under(rb_cOnigmo, "ListNode", rb_cObject);
-    rb_cOnigmoQuantifierNode = rb_define_class_under(rb_cOnigmo, "QuantifierNode", rb_cObject);
-    rb_cOnigmoStringNode = rb_define_class_under(rb_cOnigmo, "StringNode", rb_cObject);
+    rb_cOnigmoNode = rb_define_class_under(rb_cOnigmo, "Node", rb_cObject);
+    rb_cOnigmoAlternationNode = rb_define_class_under(rb_cOnigmo, "AlternationNode", rb_cOnigmoNode);
+    rb_cOnigmoAnchorBufferBeginNode = rb_define_class_under(rb_cOnigmo, "AnchorBufferBeginNode", rb_cOnigmoNode);
+    rb_cOnigmoAnchorBufferEndNode = rb_define_class_under(rb_cOnigmo, "AnchorBufferEndNode", rb_cOnigmoNode);
+    rb_cOnigmoAnchorKeepNode = rb_define_class_under(rb_cOnigmo, "AnchorKeepNode", rb_cOnigmoNode);
+    rb_cOnigmoAnchorLineBeginNode = rb_define_class_under(rb_cOnigmo, "AnchorLineBeginNode", rb_cOnigmoNode);
+    rb_cOnigmoAnchorLineEndNode = rb_define_class_under(rb_cOnigmo, "AnchorLineEndNode", rb_cOnigmoNode);
+    rb_cOnigmoAnchorPositionBeginNode = rb_define_class_under(rb_cOnigmo, "AnchorPositionBeginNode", rb_cOnigmoNode);
+    rb_cOnigmoAnchorSemiEndNode = rb_define_class_under(rb_cOnigmo, "AnchorSemiEndNode", rb_cOnigmoNode);
+    rb_cOnigmoAnchorWordBoundaryNode = rb_define_class_under(rb_cOnigmo, "AnchorWordBoundaryNode", rb_cOnigmoNode);
+    rb_cOnigmoAnchorWordBoundaryInvertNode = rb_define_class_under(rb_cOnigmo, "AnchorWordBoundaryInvertNode", rb_cOnigmoNode);
+    rb_cOnigmoAnyNode = rb_define_class_under(rb_cOnigmo, "AnyNode", rb_cOnigmoNode);
+    rb_cOnigmoBackrefNode = rb_define_class_under(rb_cOnigmo, "BackrefNode", rb_cOnigmoNode);
+    rb_cOnigmoCallNode = rb_define_class_under(rb_cOnigmo, "CallNode", rb_cOnigmoNode);
+    rb_cOnigmoCClassNode = rb_define_class_under(rb_cOnigmo, "CClassNode", rb_cOnigmoNode);
+    rb_cOnigmoCClassInvertNode = rb_define_class_under(rb_cOnigmo, "CClassInvertNode", rb_cOnigmoNode);
+    rb_cOnigmoEncloseAbsentNode = rb_define_class_under(rb_cOnigmo, "EncloseAbsentNode", rb_cOnigmoNode);
+    rb_cOnigmoEncloseConditionNode = rb_define_class_under(rb_cOnigmo, "EncloseConditionNode", rb_cOnigmoNode);
+    rb_cOnigmoEncloseMemoryNode = rb_define_class_under(rb_cOnigmo, "EncloseMemoryNode", rb_cOnigmoNode);
+    rb_cOnigmoEncloseOptionsNode = rb_define_class_under(rb_cOnigmo, "EncloseOptionsNode", rb_cOnigmoNode);
+    rb_cOnigmoEncloseStopBacktrackNode = rb_define_class_under(rb_cOnigmo, "EncloseStopBacktrackNode", rb_cOnigmoNode);
+    rb_cOnigmoListNode = rb_define_class_under(rb_cOnigmo, "ListNode", rb_cOnigmoNode);
+    rb_cOnigmoLookAheadNode = rb_define_class_under(rb_cOnigmo, "LookAheadNode", rb_cOnigmoNode);
+    rb_cOnigmoLookAheadInvertNode = rb_define_class_under(rb_cOnigmo, "LookAheadInvertNode", rb_cOnigmoNode);
+    rb_cOnigmoLookBehindNode = rb_define_class_under(rb_cOnigmo, "LookBehindNode", rb_cOnigmoNode);
+    rb_cOnigmoLookBehindInvertNode = rb_define_class_under(rb_cOnigmo, "LookBehindInvertNode", rb_cOnigmoNode);
+    rb_cOnigmoQuantifierNode = rb_define_class_under(rb_cOnigmo, "QuantifierNode", rb_cOnigmoNode);
+    rb_cOnigmoStringNode = rb_define_class_under(rb_cOnigmo, "StringNode", rb_cOnigmoNode);
+    rb_cOnigmoWordNode = rb_define_class_under(rb_cOnigmo, "WordNode", rb_cOnigmoNode);
+    rb_cOnigmoWordInvertNode = rb_define_class_under(rb_cOnigmo, "WordInvertNode", rb_cOnigmoNode);
 }
