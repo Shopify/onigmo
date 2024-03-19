@@ -308,10 +308,18 @@ build_node(Node *node) {
         }
         case NT_CALL: {
             CallNode *call_node = NCALL(node);
-            VALUE name = rb_str_new((const char *) call_node->name, call_node->name_end - call_node->name);
 
-            VALUE argv[] = { name };
-            return rb_class_new_instance(1, argv, rb_cOnigmoCallNode);
+            VALUE name;
+            ptrdiff_t length = call_node->name_end - call_node->name;
+
+            if (length > 0) {
+                name = rb_str_new((const char *) call_node->name, length);
+            } else {
+                name = Qnil;
+            }
+
+            VALUE argv[] = { INT2NUM(call_node->group_num), name };
+            return rb_class_new_instance(2, argv, rb_cOnigmoCallNode);
         }
         default: {
             RUBY_ASSERT("unknown node type");

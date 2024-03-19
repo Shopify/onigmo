@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 module Onigmo
+  # foo|bar
+  # ^^^^^^^
   class AlternationNode
     attr_reader :nodes
 
@@ -9,6 +11,8 @@ module Onigmo
     end
   end
 
+  # \A
+  # ^^
   class AnchorNode
     attr_reader :type
 
@@ -17,9 +21,13 @@ module Onigmo
     end
   end
 
+  # .
+  # ^
   class AnyNode
   end
 
+  # \k<name>
+  # ^^^^^^^^
   class BackrefNode
     attr_reader :values
 
@@ -28,14 +36,19 @@ module Onigmo
     end
   end
 
+  # \g<name>
+  # ^^^^^^^^
   class CallNode
-    attr_reader :name
+    attr_reader :number, :name
 
-    def initialize(name)
+    def initialize(number, name)
+      @number = number
       @name = name
     end
   end
 
+  # [[a-z]]
+  # ^^^^^^^
   class CClassNode
     attr_reader :inverted, :ranges
 
@@ -45,6 +58,8 @@ module Onigmo
     end
   end
 
+  # \w
+  # ^^
   class CTypeNode
     attr_reader :type
 
@@ -53,6 +68,8 @@ module Onigmo
     end
   end
 
+  # ()
+  # ^^
   class EncloseNode
     attr_reader :type, :node
 
@@ -62,6 +79,8 @@ module Onigmo
     end
   end
 
+  # a.b
+  # ^^^
   class ListNode
     attr_reader :nodes
 
@@ -70,6 +89,8 @@ module Onigmo
     end
   end
 
+  # a{1,2}
+  #  ^^^^^
   class QuantifierNode
     attr_reader :lower, :upper, :greedy, :node
 
@@ -81,6 +102,8 @@ module Onigmo
     end
   end
 
+  # abc
+  # ^^^
   class StringNode
     attr_reader :value
 
