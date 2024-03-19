@@ -16,8 +16,7 @@ GEM
       power_assert
 
 PLATFORMS
-  arm64-darwin-22
-  arm64-darwin-23
+  ruby
 
 DEPENDENCIES
   bundler
