@@ -1,5 +1,6 @@
 #include <ruby.h>
 #include <ruby/onigmo.h>
+#include <ruby/encoding.h>
 
 #include "regint.h"
 #include "regparse.h"
@@ -50,10 +51,10 @@ build_options(OnigOptionType option) {
     if (option & ONIG_OPTION_NEGATE_SINGLELINE) rb_ary_push(options, ID2SYM(rb_intern("negate_singleline")));
     if (option & ONIG_OPTION_DONT_CAPTURE_GROUP) rb_ary_push(options, ID2SYM(rb_intern("dont_capture_group")));
     if (option & ONIG_OPTION_CAPTURE_GROUP) rb_ary_push(options, ID2SYM(rb_intern("capture_group")));
-    if (option & ONIG_OPTION_NOTBOL) rb_ary_push(options, ID2SYM(rb_intern("notbol")));
-    if (option & ONIG_OPTION_NOTEOL) rb_ary_push(options, ID2SYM(rb_intern("noteol")));
-    if (option & ONIG_OPTION_NOTBOS) rb_ary_push(options, ID2SYM(rb_intern("notbos")));
-    if (option & ONIG_OPTION_NOTEOS) rb_ary_push(options, ID2SYM(rb_intern("noteos")));
+    if (option & ONIG_OPTION_NOTBOL) rb_ary_push(options, ID2SYM(rb_intern("not_bol")));
+    if (option & ONIG_OPTION_NOTEOL) rb_ary_push(options, ID2SYM(rb_intern("not_eol")));
+    if (option & ONIG_OPTION_NOTBOS) rb_ary_push(options, ID2SYM(rb_intern("not_bos")));
+    if (option & ONIG_OPTION_NOTEOS) rb_ary_push(options, ID2SYM(rb_intern("not_eos")));
     if (option & ONIG_OPTION_ASCII_RANGE) rb_ary_push(options, ID2SYM(rb_intern("ascii_range")));
     if (option & ONIG_OPTION_POSIX_BRACKET_ALL_RANGE) rb_ary_push(options, ID2SYM(rb_intern("posix_bracket_all_range")));
     if (option & ONIG_OPTION_WORD_BOUND_ALL_RANGE) rb_ary_push(options, ID2SYM(rb_intern("word_bound_all_range")));
@@ -63,33 +64,47 @@ build_options(OnigOptionType option) {
 }
 
 static VALUE
-build_node(Node *node) {
+build_bitset(BitSetRef ref, OnigEncoding encoding) {
+    VALUE values = rb_ary_new();
+
+    for (int index = 0; index < SINGLE_BYTE_SIZE; index++) {
+        if (BITSET_AT(ref, index) != 0) {
+            const char character = (const char) index;
+            rb_ary_push(values, rb_enc_str_new(&character, 1, encoding));
+        }
+    }
+
+    return values;
+}
+
+static VALUE
+build_node(Node *node, OnigEncoding encoding) {
     int type = NTYPE(node);
 
     switch (type) {
         case NT_STR: {
-            VALUE value = rb_str_new((const char *) NSTR(node)->s, NSTR(node)->end - NSTR(node)->s);
+            VALUE value = rb_enc_str_new((const char *) NSTR(node)->s, NSTR(node)->end - NSTR(node)->s, encoding);
             VALUE argv[] = { value };
             return rb_class_new_instance(1, argv, rb_cOnigmoStringNode);
         }
         case NT_CCLASS: {
-            VALUE ranges = rb_ary_new();
+            CClassNode* cclass_node = NCCLASS(node);
+            VALUE values = build_bitset(cclass_node->bs, encoding);
 
-            if (NCCLASS(node)->mbuf) {
-                BBuf *bbuf = NCCLASS(node)->mbuf;
+            if (cclass_node->mbuf != NULL) {
+                BBuf *bbuf = cclass_node->mbuf;
                 OnigCodePoint *data = (OnigCodePoint *) bbuf->p;
                 OnigCodePoint *end = (OnigCodePoint *) (bbuf->p + bbuf->used);
 
                 for (++data; data < end; data += 2) {
-                    VALUE range = rb_ary_new();
-                    rb_ary_push(range, INT2NUM(data[0]));
-                    rb_ary_push(range, INT2NUM(data[1]));
-                    rb_ary_push(ranges, range);
+                    for (OnigCodePoint code = data[0]; code < data[1]; code++) {
+                        rb_ary_push(values, INT2NUM(code));
+                    }
                 }
             }
 
-            VALUE argv[] = { ranges };
-            if (IS_NCCLASS_NOT(NCCLASS(node))) {
+            VALUE argv[] = { values };
+            if (IS_NCCLASS_NOT(cclass_node)) {
                 return rb_class_new_instance(1, argv, rb_cOnigmoCClassInvertNode);
             } else {
                 return rb_class_new_instance(1, argv, rb_cOnigmoCClassNode);
@@ -130,13 +145,13 @@ build_node(Node *node) {
                 lower == -1 ? Qnil : INT2NUM(lower),
                 upper = -1 ? Qnil : INT2NUM(upper),
                 (NQTFR(node)->greedy ? Qtrue : Qfalse),
-                build_node(NQTFR(node)->target)
+                build_node(NQTFR(node)->target, encoding)
             };
 
             return rb_class_new_instance(4, argv, rb_cOnigmoQuantifierNode);
         }
         case NT_ENCLOSE: {
-            VALUE target = build_node(NENCLOSE(node)->target);
+            VALUE target = build_node(NENCLOSE(node)->target, encoding);
 
             switch (NENCLOSE(node)->type) {
                 case ENCLOSE_OPTION: {
@@ -183,22 +198,22 @@ build_node(Node *node) {
                 case ANCHOR_NOT_WORD_BOUND:
                     return rb_class_new_instance(0, NULL, rb_cOnigmoAnchorWordBoundaryInvertNode);
                 case ANCHOR_PREC_READ: {
-                    VALUE target = build_node(NANCHOR(node)->target);
+                    VALUE target = build_node(NANCHOR(node)->target, encoding);
                     VALUE argv[] = { target };
                     return rb_class_new_instance(1, argv, rb_cOnigmoLookAheadNode);
                 }
                 case ANCHOR_PREC_READ_NOT: {
-                    VALUE target = build_node(NANCHOR(node)->target);
+                    VALUE target = build_node(NANCHOR(node)->target, encoding);
                     VALUE argv[] = { target };
                     return rb_class_new_instance(1, argv, rb_cOnigmoLookAheadInvertNode);
                 }
                 case ANCHOR_LOOK_BEHIND: {
-                    VALUE target = build_node(NANCHOR(node)->target);
+                    VALUE target = build_node(NANCHOR(node)->target, encoding);
                     VALUE argv[] = { target };
                     return rb_class_new_instance(1, argv, rb_cOnigmoLookBehindNode);
                 }
                 case ANCHOR_LOOK_BEHIND_NOT: {
-                    VALUE target = build_node(NANCHOR(node)->target);
+                    VALUE target = build_node(NANCHOR(node)->target, encoding);
                     VALUE argv[] = { target };
                     return rb_class_new_instance(1, argv, rb_cOnigmoLookBehindInvertNode);
                 }
@@ -211,11 +226,11 @@ build_node(Node *node) {
         }
         case NT_LIST: {
             VALUE nodes = rb_ary_new();
-            rb_ary_push(nodes, build_node(NCAR(node)));
+            rb_ary_push(nodes, build_node(NCAR(node), encoding));
 
             while (IS_NOT_NULL(node = NCDR(node))) {
                 RUBY_ASSERT(NTYPE(node) == type);
-                rb_ary_push(nodes, build_node(NCAR(node)));
+                rb_ary_push(nodes, build_node(NCAR(node), encoding));
             }
 
             VALUE argv[] = { nodes };
@@ -223,11 +238,11 @@ build_node(Node *node) {
         }
         case NT_ALT: {
             VALUE nodes = rb_ary_new();
-            rb_ary_push(nodes, build_node(NCAR(node)));
+            rb_ary_push(nodes, build_node(NCAR(node), encoding));
 
             while (IS_NOT_NULL(node = NCDR(node))) {
                 RUBY_ASSERT(NTYPE(node) == type);
-                rb_ary_push(nodes, build_node(NCAR(node)));
+                rb_ary_push(nodes, build_node(NCAR(node), encoding));
             }
 
             VALUE argv[] = { nodes };
@@ -240,7 +255,7 @@ build_node(Node *node) {
             ptrdiff_t length = call_node->name_end - call_node->name;
 
             if (length > 0) {
-                name = rb_str_new((const char *) call_node->name, length);
+                name = rb_enc_str_new((const char *) call_node->name, length, encoding);
             } else {
                 name = Qnil;
             }
@@ -256,11 +271,10 @@ build_node(Node *node) {
 }
 
 static void
-fail(int result, regex_t *regex) {
+fail(int result, regex_t *regex, OnigErrorInfo *einfo) {
     OnigUChar message[ONIG_MAX_ERROR_MESSAGE_LEN];
-    OnigErrorInfo einfo = { 0 };
+    onig_error_code_to_str(message, result, einfo);
 
-    onig_error_code_to_str(message, result, &einfo);
     onig_free(regex);
     onig_end();
 
@@ -279,18 +293,18 @@ parse(VALUE self, VALUE string) {
     }
 
     int result;
-    OnigEncoding encoding = ONIG_ENCODING_ASCII;
+    OnigEncoding encoding = rb_enc_get(string);
 
-    if ((result = onig_reg_init(regex, ONIG_OPTION_DEFAULT, ONIGENC_CASE_FOLD_DEFAULT, encoding, ONIG_SYNTAX_DEFAULT)) != 0) {
-        fail(result, regex);
+    if ((result = onig_reg_init(regex, ONIG_OPTION_DEFAULT, ONIGENC_CASE_FOLD_DEFAULT, encoding, ONIG_SYNTAX_DEFAULT)) != ONIG_NORMAL) {
+        fail(result, regex, NULL);
         return Qnil;
     }
 
     OnigDistance init_size = (pattern_end - pattern) * 2;
     result = BBUF_INIT(regex, init_size);
 
-    if (result != 0) {
-        fail(result, regex);
+    if (result != ONIG_NORMAL) {
+        fail(result, regex, NULL);
         return Qnil;
     }
 
@@ -298,12 +312,12 @@ parse(VALUE self, VALUE string) {
     ScanEnv scan_env = { 0 };
 
     result = onig_parse_make_tree(&root, pattern, pattern_end, regex, &scan_env);
-    if (result != 0) {
-        fail(result, regex);
+    if (result != ONIG_NORMAL) {
+        fail(result, regex, NULL);
         return Qnil;
     }
 
-    VALUE node = build_node(root);
+    VALUE node = build_node(root, encoding);
 
     onig_node_free(root);
     onig_free(regex);
@@ -334,8 +348,8 @@ read_absaddr(const unsigned char **cursor) {
 }
 
 static VALUE
-read_exact(const unsigned char **cursor, int length) {
-    VALUE exact = rb_str_new((const char *) *cursor, length);
+read_exact(const unsigned char **cursor, int length, OnigEncoding encoding) {
+    VALUE exact = rb_enc_str_new((const char *) *cursor, length, encoding);
     *cursor += length;
     return exact;
 }
@@ -348,16 +362,10 @@ read_length(const unsigned char **cursor) {
 }
 
 static VALUE
-read_bitset(const unsigned char **cursor) {
-    BitSetRef ref = (BitSetRef) (*cursor);
-    int bitset = 0;
-
-    for (int index = 0; index < SINGLE_BYTE_SIZE; index++) {
-        if (BITSET_AT(ref, index)) bitset++;
-    }
-
-    *cursor += SINGLE_BYTE_SIZE;
-    return INT2NUM(bitset);
+read_bitset(const unsigned char **cursor, OnigEncoding encoding) {
+    VALUE bitset = build_bitset((BitSetRef) (*cursor), encoding);
+    *cursor += SIZE_BITSET;
+    return bitset;
 }
 
 static VALUE
@@ -395,11 +403,11 @@ compile(VALUE self, VALUE string) {
     regex_t *regex;
     OnigErrorInfo einfo;
 
-    OnigEncoding encoding = ONIG_ENCODING_ASCII;
+    OnigEncoding encoding = rb_enc_get(string);
     int result = onig_new(&regex, pattern, pattern + strlen((const char *) pattern), ONIG_OPTION_DEFAULT, encoding, ONIG_SYNTAX_DEFAULT, &einfo);
 
     if (result != ONIG_NORMAL) {
-        fail(result, regex);
+        fail(result, regex, &einfo);
         return Qnil;
     }
 
@@ -422,27 +430,27 @@ compile(VALUE self, VALUE string) {
             }
             case OP_EXACT1: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exact1")));
-                rb_ary_push(insn, read_exact(&cursor, 1));
+                rb_ary_push(insn, read_exact(&cursor, 1, encoding));
                 break;
             }
             case OP_EXACT2: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exact2")));
-                rb_ary_push(insn, read_exact(&cursor, 2));
+                rb_ary_push(insn, read_exact(&cursor, 2, encoding));
                 break;
             }
             case OP_EXACT3: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exact3")));
-                rb_ary_push(insn, read_exact(&cursor, 3));
+                rb_ary_push(insn, read_exact(&cursor, 3, encoding));
                 break;
             }
             case OP_EXACT4: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exact4")));
-                rb_ary_push(insn, read_exact(&cursor, 4));
+                rb_ary_push(insn, read_exact(&cursor, 4, encoding));
                 break;
             }
             case OP_EXACT5: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exact5")));
-                rb_ary_push(insn, read_exact(&cursor, 5));
+                rb_ary_push(insn, read_exact(&cursor, 5, encoding));
                 break;
             }
             case OP_EXACTN: {
@@ -452,17 +460,17 @@ compile(VALUE self, VALUE string) {
             }
             case OP_EXACTMB2N1: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exactmb2n1")));
-                rb_ary_push(insn, read_exact(&cursor, 2));
+                rb_ary_push(insn, read_exact(&cursor, 2, encoding));
                 break;
             }
             case OP_EXACTMB2N2: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exactmb2n2")));
-                rb_ary_push(insn, read_exact(&cursor, 4));
+                rb_ary_push(insn, read_exact(&cursor, 4, encoding));
                 break;
             }
             case OP_EXACTMB2N3: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exactmb2n3")));
-                rb_ary_push(insn, read_exact(&cursor, 6));
+                rb_ary_push(insn, read_exact(&cursor, 6, encoding));
                 break;
             }
             case OP_EXACTMB2N: {
@@ -471,7 +479,7 @@ compile(VALUE self, VALUE string) {
                 VALUE length = read_length(&cursor);
                 rb_ary_push(insn, length);
 
-                rb_ary_push(insn, read_exact(&cursor, NUM2INT(length) * 2));
+                rb_ary_push(insn, read_exact(&cursor, NUM2INT(length) * 2, encoding));
                 break;
             }
             case OP_EXACTMB3N: {
@@ -480,7 +488,7 @@ compile(VALUE self, VALUE string) {
                 VALUE length = read_length(&cursor);
                 rb_ary_push(insn, length);
 
-                rb_ary_push(insn, read_exact(&cursor, NUM2INT(length) * 3));
+                rb_ary_push(insn, read_exact(&cursor, NUM2INT(length) * 3, encoding));
                 break;
             }
             case OP_EXACTMBN: {
@@ -489,24 +497,24 @@ compile(VALUE self, VALUE string) {
                 VALUE length = read_length(&cursor);
                 rb_ary_push(insn, length);
 
-                rb_ary_push(insn, read_exact(&cursor, NUM2INT(length) * 2));
+                rb_ary_push(insn, read_exact(&cursor, NUM2INT(length) * 2, encoding));
                 break;
             }
             case OP_EXACT1_IC: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exact1_ic")));
                 length = enclen(encoding, cursor, end);
-                rb_ary_push(insn, read_exact(&cursor, length));
+                rb_ary_push(insn, read_exact(&cursor, length, encoding));
                 break;
             }
             case OP_EXACTN_IC: {
                 rb_ary_push(insn, ID2SYM(rb_intern("exactn_ic")));
                 length = enclen(encoding, cursor, end);
-                rb_ary_push(insn, read_exact(&cursor, length));
+                rb_ary_push(insn, read_exact(&cursor, length, encoding));
                 break;
             }
             case OP_CCLASS: {
                 rb_ary_push(insn, ID2SYM(rb_intern("cclass")));
-                rb_ary_push(insn, read_bitset(&cursor));
+                rb_ary_push(insn, read_bitset(&cursor, encoding));
                 break;
             }
             case OP_CCLASS_MB: {
@@ -529,12 +537,12 @@ compile(VALUE self, VALUE string) {
             }
             case OP_CCLASS_NOT: {
                 rb_ary_push(insn, ID2SYM(rb_intern("cclass_not")));
-                rb_ary_push(insn, read_bitset(&cursor));
+                rb_ary_push(insn, read_bitset(&cursor, encoding));
                 break;
             }
             case OP_CCLASS_MIX: {
                 rb_ary_push(insn, ID2SYM(rb_intern("cclass_mix")));
-                rb_ary_push(insn, read_bitset(&cursor));
+                rb_ary_push(insn, read_bitset(&cursor, encoding));
 
                 VALUE length = read_length(&cursor);
                 rb_ary_push(insn, length);
@@ -544,7 +552,7 @@ compile(VALUE self, VALUE string) {
             }
             case OP_CCLASS_MIX_NOT: {
                 rb_ary_push(insn, ID2SYM(rb_intern("cclass_mix_not")));
-                rb_ary_push(insn, read_bitset(&cursor));
+                rb_ary_push(insn, read_bitset(&cursor, encoding));
 
                 VALUE length = read_length(&cursor);
                 rb_ary_push(insn, length);
@@ -570,12 +578,12 @@ compile(VALUE self, VALUE string) {
             }
             case OP_ANYCHAR_STAR_PEEK_NEXT: {
                 rb_ary_push(insn, ID2SYM(rb_intern("anychar_star_peek_next")));
-                rb_ary_push(insn, read_exact(&cursor, 1));
+                rb_ary_push(insn, read_exact(&cursor, 1, encoding));
                 break;
             }
             case OP_ANYCHAR_ML_STAR_PEEK_NEXT: {
                 rb_ary_push(insn, ID2SYM(rb_intern("anychar_ml_star_peek_next")));
-                rb_ary_push(insn, read_exact(&cursor, 1));
+                rb_ary_push(insn, read_exact(&cursor, 1, encoding));
                 break;
             }
             case OP_WORD: {
@@ -762,13 +770,13 @@ compile(VALUE self, VALUE string) {
             case OP_PUSH_OR_JUMP_EXACT1: {
                 rb_ary_push(insn, ID2SYM(rb_intern("push_or_jump_exact1")));
                 rb_ary_push(insn, read_reladdr(&cursor));
-                rb_ary_push(insn, read_exact(&cursor, 1));
+                rb_ary_push(insn, read_exact(&cursor, 1, encoding));
                 break;
             }
             case OP_PUSH_IF_PEEK_NEXT: {
                 rb_ary_push(insn, ID2SYM(rb_intern("push_if_peek_next")));
                 rb_ary_push(insn, read_reladdr(&cursor));
-                rb_ary_push(insn, read_exact(&cursor, 1));
+                rb_ary_push(insn, read_exact(&cursor, 1, encoding));
                 break;
             }
             case OP_REPEAT: {

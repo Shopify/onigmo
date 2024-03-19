@@ -55,11 +55,11 @@ module Onigmo
     end
 
     def visit_cclass_node(node)
-      { ranges: node.ranges }
+      { values: node.values }
     end
 
     def visit_cclass_invert_node(node)
-      { ranges: node.ranges }
+      { values: node.values }
     end
 
     def visit_enclose_absent_node(node)

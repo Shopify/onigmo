@@ -111,20 +111,20 @@ module Onigmo
   # [a-z]
   # ^^^^^
   class CClassNode < Node
-    attr_reader :ranges
+    attr_reader :values
 
-    def initialize(ranges)
-      @ranges = ranges
+    def initialize(values)
+      @values = values
     end
   end
 
   # [^a-z]
   # ^^^^^^
   class CClassInvertNode < Node
-    attr_reader :ranges
+    attr_reader :values
 
-    def initialize(ranges)
-      @ranges = ranges
+    def initialize(values)
+      @values = values
     end
   end
 

@@ -97,7 +97,7 @@ module Onigmo
         q.text("cclass(")
         q.nest(2) do
           q.breakable("")
-          q.pp(node.ranges)
+          q.pp(node.values)
         end
         q.breakable("")
         q.text(")")
@@ -109,7 +109,7 @@ module Onigmo
         q.text("cclassInvert(")
         q.nest(2) do
           q.breakable("")
-          q.pp(node.ranges)
+          q.pp(node.values)
         end
         q.breakable("")
         q.text(")")
