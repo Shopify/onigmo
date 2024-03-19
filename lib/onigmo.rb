@@ -47,8 +47,8 @@ module Onigmo
     end
   end
 
-  # [[a-z]]
-  # ^^^^^^^
+  # [a-z]
+  # ^^^^^
   class CClassNode
     attr_reader :inverted, :ranges
 
@@ -68,13 +68,55 @@ module Onigmo
     end
   end
 
+  # (?~subexp)
+  # ^^^^^^^^^^
+  class EncloseAbsentNode
+    attr_reader :node
+
+    def initialize(node)
+      @node = node
+    end
+  end
+
+  # (?(cond)subexp)
+  # ^^^^^^^^^^^^^^^^^^^
+  class EncloseConditionNode
+    attr_reader :number, :node
+
+    def initialize(number, node)
+      @number = number
+      @node = node
+    end
+  end
+
   # ()
   # ^^
-  class EncloseNode
-    attr_reader :type, :node
+  class EncloseMemoryNode
+    attr_reader :number, :node
 
-    def initialize(type, node)
-      @type = type
+    def initialize(number, node)
+      @number = number
+      @node = node
+    end
+  end
+
+  # (?options:subexp)
+  # ^^^^^^^^^^^^^^^^^
+  class EncloseOptionsNode
+    attr_reader :options, :node
+
+    def initialize(options, node)
+      @options = options
+      @node = node
+    end
+  end
+
+  # (?>subexp)
+  # ^^^^^^^^^^
+  class EncloseStopBacktrackNode
+    attr_reader :node
+
+    def initialize(node)
       @node = node
     end
   end
